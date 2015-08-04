@@ -54,6 +54,7 @@ try:
 except ImportError as err:
     from idstools.compat.argparse import argparse
 
+from idstools.compat.daemon import Daemon
 from idstools import unified2
 from idstools import maps
 
@@ -209,6 +210,23 @@ read from the specified 'spool' directory.  Otherwise files on the
 command line will be processed.
 """
 
+class u2eve_daemon(Daemon):
+    def __init__(self, reader, eve_filter, outputs):
+	super(u2eve_daemon, self).__init__(pidfile="/var/run/u2jeve.pid")
+        self.reader = reader
+        self.eve_filter = eve_filter
+        self.outputs = outputs
+
+    def run(self):
+        for record in self.reader:
+            try:
+		encoded = json.dumps(self.eve_filter.filter(event), encoding="latin-1")
+                for out in self.outputs:
+                    out.write(encoded)
+            except Exception as err:
+                LOG.error("Failed to encode record as JSON: %s: %s" % (
+                    str(err), str(record)))
+
 def main():
 
     msgmap = maps.SignatureMap()
@@ -250,6 +268,9 @@ def main():
     parser.add_argument(
         "--stdout", action="store_true", default=False,
         help="also log to stdout if --output is a file")
+    parser.add_argument(
+        "--daemon", action="store_true", default=False,
+        help="Run as Daemon")
     parser.add_argument(
         "filenames", nargs="*")
     args = parser.parse_args()
@@ -299,14 +320,22 @@ def main():
         print("nothing to do.")
         return
 
-    for event in reader:
+    if args.daemon:
+        d=u2eve_daemon(reader=reader, eve_filter=eve_filter, outputs=outputs)
         try:
-            encoded = json.dumps(eve_filter.filter(event), encoding="latin-1")
-            for out in outputs:
-                out.write(encoded)
-        except Exception as err:
-            LOG.error("Failed to encode record as JSON: %s: %s" % (
-                str(err), str(event)))
+	    d.start()
+        except Exception as e:
+	    LOG.error(str(e))
+	    d.stop()
+    else:
+	for event in reader:
+	    try:
+		encoded = json.dumps(eve_filter.filter(event), encoding="latin-1")
+		for out in outputs:
+		    out.write(encoded)
+	    except Exception as err:
+		LOG.error("Failed to encode record as JSON: %s: %s" % (
+		    str(err), str(event)))
 
 if __name__ == "__main__":
     sys.exit(main())

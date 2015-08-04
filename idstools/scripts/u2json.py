@@ -201,6 +201,7 @@ def rollover_hook(closed, opened):
 
 class u2json_daemon(Daemon):
     def __init__(self, reader, formatter, outputs, bookmark=None):
+        super(u2json_daemon, self).__init__(pidfile="/var/run/u2json.pid")
         self.reader = reader
         self.formatter = formatter
         self.outputs = outputs
@@ -329,7 +330,12 @@ def main():
     formatter = Formatter(msgmap=msgmap, classmap=classmap)
 
     if args.daemon:
-        u2json_daemon(reader=reader, formmater=formatter, outputs=outputs, bookmark=bookmark)
+        d = u2json_daemon(reader=reader, formatter=formatter, outputs=outputs, bookmark=bookmark)
+        try:
+            d.start()
+        except Exception as e:
+            LOG.error(str(e))
+            d.stop()
     else:
         for record in reader:
             try:
