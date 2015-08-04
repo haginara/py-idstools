@@ -46,6 +46,7 @@ try:
 except ImportError as err:
     from idstools.compat.argparse import argparse
 
+from idstools.compat.daemon import Daemon
 from idstools import unified2
 from idstools import maps
 
@@ -198,6 +199,25 @@ def rollover_hook(closed, opened):
     LOG.debug("Deleting %s.", closed)
     os.unlink(closed)
 
+class u2json_daemon(Daemon):
+    def __init__(self, reader, formatter, outputs, bookmark=None):
+        self.reader = reader
+        self.formatter = formatter
+        self.outputs = outputs
+        self.bookmark = bookmark
+
+    def run(self):
+        for record in self.reader:
+            try:
+                as_json = json.dumps(self.formatter.format(record), encoding="latin-1")
+                for out in self.outputs:
+                    out.write(as_json)
+            except Exception as err:
+                LOG.error("Failed to encode record as JSON: %s: %s" % (
+                    str(err), str(record)))
+            if self.bookmark:
+                filename, offset = self.reader.tell()
+                self.bookmark.update(filename, offset)
 def main():
 
     msgmap = maps.SignatureMap()
@@ -235,6 +255,9 @@ def main():
     parser.add_argument(
         "--output", metavar="<filename>",
         help="output filename (eg: /var/log/snort/alerts.json")
+    parser.add_arguemnt(
+        "--daemon", action="store_true", default=False,
+        help="Run as Daemon")
     parser.add_argument(
         "--stdout", action="store_true", default=False,
         help="also log to stdout if --output is a file")
@@ -305,17 +328,20 @@ def main():
 
     formatter = Formatter(msgmap=msgmap, classmap=classmap)
 
-    for record in reader:
-        try:
-            as_json = json.dumps(formatter.format(record), encoding="latin-1")
-            for out in outputs:
-                out.write(as_json)
-        except Exception as err:
-            LOG.error("Failed to encode record as JSON: %s: %s" % (
-                str(err), str(record)))
-        if bookmark:
-            filename, offset = reader.tell()
-            bookmark.update(filename, offset)
+    if args.daemon:
+        u2json_daemon(reader=reader, formmater=formatter, outputs=outputs, bookmark=bookmark)
+    else:
+        for record in reader:
+            try:
+                as_json = json.dumps(formatter.format(record), encoding="latin-1")
+                for out in outputs:
+                    out.write(as_json)
+            except Exception as err:
+                LOG.error("Failed to encode record as JSON: %s: %s" % (
+                    str(err), str(record)))
+            if bookmark:
+                filename, offset = reader.tell()
+                bookmark.update(filename, offset)
 
 if __name__ == "__main__":
     sys.exit(main())
