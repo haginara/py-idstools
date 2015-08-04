@@ -255,7 +255,7 @@ def main():
     parser.add_argument(
         "--output", metavar="<filename>",
         help="output filename (eg: /var/log/snort/alerts.json")
-    parser.add_arguemnt(
+    parser.add_argument(
         "--daemon", action="store_true", default=False,
         help="Run as Daemon")
     parser.add_argument(
